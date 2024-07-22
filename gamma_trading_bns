@@ -1,0 +1,73 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np 
+import os
+from scipy.stats import norm
+
+def bns(
+      s, k, r, tau, sigma, opt="C"):
+
+    "calcolo il prezzo BnS, delta=Nd1 per call o put options"
+
+    d1 = (np.log(np.array(s)/k) + (r+sigma*sigma/2) * np.array(tau))/ (sigma
+                                                    *np.sqrt(np.array(tau)))
+    d2 = d1 - sigma * np.sqrt(tau)
+
+    if opt == "C":
+        Nd1 = norm.cdf(d1)
+        Nd2 = norm.cdf(d2, 0, 1)
+        price = Nd1 * s - Nd2 * k * np.exp(- r * tau)
+        delta = Nd1
+
+    if opt == "P":
+        Nd1 = - norm.cdf(- d1)
+        Nd2 = norm.cdf(- d2)
+        price = Nd2 * k * np.exp(- r * tau) + Nd1 * s
+        delta = Nd1
+        
+    return price, delta
+
+opt_maturity = 1
+steps = 252
+t = np.linspace(0, 1, steps + 1)
+r = 0.3
+sigma = 0.22
+k = 3900
+typ = 'C'
+underlying = 3891
+path = 10000
+weiner_mat = np.random.normal(size = (path, steps))
+under_mat = np.zeros((path, steps + 1))
+dt = 1 / steps
+under_mat[:, 0] = underlying
+tau = 1-t
+
+for i in range(1, steps + 1):
+
+    under_mat[:, i] = under_mat[:, i - 1] +  under_mat[:, i - 1] * (r * dt + (sigma) *np.sqrt(dt) * weiner_mat[:, i-1])
+
+delta = np.zeros((path, steps + 1))
+option_price = np.zeros((path, steps + 1))
+dates = []
+rebalance = 1
+
+for i in range(steps + 1):
+
+    option_price[:, i], delta[:, i] = bns(under_mat[:, i], k, r, tau[i], sigma)
+
+pnl =  np.zeros((path, steps))
+
+for j in range(path):
+    for i in range(rebalance, steps + 1, rebalance):
+        
+        if typ == 'C':
+
+            interest = (delta[j, i - rebalance] * under_mat[j, i - rebalance] - option_price[j, i - rebalance]) *( np.exp (r * dt * rebalance) - 1)
+            
+        pnl[j, i-1] = option_price[j, i] - option_price[j, i - rebalance] - (delta[j, i - rebalance]) *  (under_mat[j, i]-under_mat[j, i - rebalance]) + interest
+
+
+plt.hist(np.sum(pnl, axis=1), bins=1500)
+plt.title('sigma = 22%, r = {}%, steps = 252, S/K = {}'.format(r, round(underlying/k, 2)))
+plt.show()
+print(np.mean(np.sum(pnl, axis=1)))
